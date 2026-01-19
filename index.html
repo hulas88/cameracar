@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gesture Car Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+
+  <style>
+    body { font-family: Arial; text-align: center; margin: 0; padding: 10px; }
+    video { width: 95%; max-width: 420px; border: 2px solid black; border-radius: 12px; }
+    h2 { margin: 10px 0; }
+    .cmd { font-size: 26px; font-weight: bold; color: green; margin: 10px 0; }
+    .btn { font-size: 18px; padding: 10px 20px; margin: 10px; border-radius: 10px; }
+  </style>
+</head>
+
+<body>
+<h2>📱✋ Gesture Control Car (HTTPS)</h2>
+<div class="cmd" id="cmdText">Command: S</div>
+<button class="btn" onclick="startCam()">✅ Start Camera</button>
+<br>
+<video id="video" autoplay playsinline></video>
+
+<script>
+  const videoElement = document.getElementById("video");
+  const cmdText = document.getElementById("cmdText");
+
+  // ✅ Put your ESP32 IP here
+  const ESP32_IP = "192.168.29.221"; 
+  const ESP32_URL = `http://${ESP32_IP}/cmd?cmd=`;
+
+  let lastCmd = "S";
+  let lastSendTime = Date.now();
+
+  function sendCmd(cmd) {
+    if (cmd !== lastCmd && Date.now() - lastSendTime > 250) {
+      fetch(ESP32_URL + cmd).catch(err => console.log(err));
+      lastCmd = cmd;
+      lastSendTime = Date.now();
+      cmdText.innerText = "Command: " + cmd;
+    }
+  }
+
+  const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
+
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+  });
+
+  hands.onResults(results => {
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      sendCmd("S");
+      return;
+    }
+
+    const lm = results.multiHandLandmarks[0];
+    const wrist = lm[0];
+    const middleTip = lm[12];
+    const thumbTip = lm[4];
+
+    let command = "S";
+
+    // Forward / Backward
+    if (middleTip.y < wrist.y - 0.05) command = "U";
+    else if (middleTip.y > wrist.y + 0.10) command = "D";
+
+    // Left / Right
+    if (thumbTip.x < wrist.x - 0.08) command = "L";
+    else if (thumbTip.x > wrist.x + 0.08) command = "R";
+
+    sendCmd(command);
+  });
+
+  async function startCam() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      });
+
+      videoElement.srcObject = stream;
+
+      async function loop() {
+        await hands.send({ image: videoElement });
+        requestAnimationFrame(loop);
+      }
+      loop();
+
+    } catch (err) {
+      alert("❌ Camera Error: " + err);
+    }
+  }
+</script>
+
+</body>
+</html>
