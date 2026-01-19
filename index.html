@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Gesture Car Control</title>
+  <title>Gesture Control Car - HTTPS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <!-- ✅ MediaPipe Hands -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <style>
@@ -12,36 +13,46 @@
     h2 { margin: 10px 0; }
     .cmd { font-size: 26px; font-weight: bold; color: green; margin: 10px 0; }
     .btn { font-size: 18px; padding: 10px 20px; margin: 10px; border-radius: 10px; }
+    .info { font-size: 16px; margin-top: 10px; }
   </style>
 </head>
 
 <body>
-<h2>📱✋ Gesture Control Car (HTTPS)</h2>
-<div class="cmd" id="cmdText">Command: S</div>
-<button class="btn" onclick="startCam()">✅ Start Camera</button>
-<br>
-<video id="video" autoplay playsinline></video>
+  <h2>📱✋ Gesture Control Car (HTTPS)</h2>
+
+  <div class="cmd" id="cmdText">Command: S</div>
+
+  <button class="btn" onclick="startCam()">✅ Start Camera</button>
+
+  <div class="info">
+    ☝️ 1 Finger = Forward | ✌️ 2 Fingers = Backward <br>
+    👍 Thumb Left = Left | 👍 Thumb Right = Right | ✊ Fist = Stop
+  </div>
+
+  <br>
+  <video id="video" autoplay playsinline></video>
 
 <script>
   const videoElement = document.getElementById("video");
   const cmdText = document.getElementById("cmdText");
 
-  // ✅ Put your ESP32 IP here
-  const ESP32_IP = "192.168.29.221"; 
+  // ✅ Put your ESP32 IP here (from Serial Monitor)
+  const ESP32_IP = "192.168.29.221";
   const ESP32_URL = `http://${ESP32_IP}/cmd?cmd=`;
 
   let lastCmd = "S";
   let lastSendTime = Date.now();
 
   function sendCmd(cmd) {
-    if (cmd !== lastCmd && Date.now() - lastSendTime > 250) {
-      fetch(ESP32_URL + cmd).catch(err => console.log(err));
+    if (cmd !== lastCmd && Date.now() - lastSendTime > 200) {
+      fetch(ESP32_URL + cmd).catch(err => console.log("ESP32 Error:", err));
       lastCmd = cmd;
       lastSendTime = Date.now();
       cmdText.innerText = "Command: " + cmd;
     }
   }
 
+  // ✅ MediaPipe Hands Setup
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
@@ -53,26 +64,68 @@
     minTrackingConfidence: 0.7
   });
 
+  // ✅ Finger Up Detection
+  function isFingerUp(tip, pip) {
+    return tip.y < pip.y;
+  }
+
   hands.onResults(results => {
+    // ✅ If no hand detected
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       sendCmd("S");
       return;
     }
 
     const lm = results.multiHandLandmarks[0];
+
+    // ✅ Landmarks
     const wrist = lm[0];
-    const middleTip = lm[12];
+
     const thumbTip = lm[4];
 
-    let command = "S";
+    const indexTip = lm[8];
+    const indexPip = lm[6];
 
-    // Forward / Backward
-    if (middleTip.y < wrist.y - 0.05) command = "U";
-    else if (middleTip.y > wrist.y + 0.10) command = "D";
+    const middleTip = lm[12];
+    const middlePip = lm[10];
 
-    // Left / Right
-    if (thumbTip.x < wrist.x - 0.08) command = "L";
-    else if (thumbTip.x > wrist.x + 0.08) command = "R";
+    const ringTip = lm[16];
+    const ringPip = lm[14];
+
+    const pinkyTip = lm[20];
+    const pinkyPip = lm[18];
+
+    // ✅ Fingers state (excluding thumb)
+    const indexUp  = isFingerUp(indexTip, indexPip);
+    const middleUp = isFingerUp(middleTip, middlePip);
+    const ringUp   = isFingerUp(ringTip, ringPip);
+    const pinkyUp  = isFingerUp(pinkyTip, pinkyPip);
+
+    // ✅ Count number of fingers up
+    let fingers = 0;
+    if (indexUp) fingers++;
+    if (middleUp) fingers++;
+    if (ringUp) fingers++;
+    if (pinkyUp) fingers++;
+
+    let command = "S"; // default stop
+
+    // ✅ 1 Finger = Forward (Index only)
+    if (fingers == 1 && indexUp) {
+      command = "U";
+    }
+
+    // ✅ 2 Fingers = Backward (Index + Middle)
+    else if (fingers == 2 && indexUp && middleUp) {
+      command = "D";
+    }
+
+    // ✅ Left/Right only if Forward/Backward not active
+    else {
+      if (thumbTip.x < wrist.x - 0.08) command = "L";
+      else if (thumbTip.x > wrist.x + 0.08) command = "R";
+      else command = "S";
+    }
 
     sendCmd(command);
   });
