@@ -1,47 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Gesture Control Car - HTTPS</title>
+  <title>Gesture Car Control - HTTPS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <style>
     body { font-family: Arial; text-align: center; margin: 0; padding: 10px; }
-    video { width: 95%; max-width: 420px; border: 2px solid black; border-radius: 12px; }
+    video { width: 95%; max-width: 420px; border: 2px solid black; border-radius: 12px; margin-top: 10px; }
     h2 { margin: 10px 0; }
     .cmd { font-size: 26px; font-weight: bold; color: green; margin: 10px 0; }
-    .btn { font-size: 18px; padding: 10px 20px; margin: 10px; border-radius: 10px; }
-    .info { font-size: 15px; margin-top: 10px; }
+    .status { font-size: 16px; color: blue; margin: 5px 0; }
+    .btn { font-size: 16px; padding: 10px 14px; margin: 6px; border-radius: 10px; }
   </style>
 </head>
 
 <body>
-  <h2>📱✋ Gesture Control Car (HTTPS)</h2>
+  <h2>📱✋ Gesture Control Car</h2>
 
   <div class="cmd" id="cmdText">Command: S</div>
+  <div class="status" id="statusText">Status: Not Sending</div>
+
   <button class="btn" onclick="startCam()">✅ Start Camera</button>
 
-  <div class="info">
-    ☝️ 1 Finger = Forward | ✌️ 2 Fingers = Backward <br>
-    👍 Thumb Left = Left | 👍 Thumb Right = Right | ✊ Fist/No Hand = Stop
-  </div>
+  <h3>✅ Test Buttons (Check ESP32 Serial Monitor)</h3>
+  <button class="btn" onclick="manualSend('U')">U Forward</button>
+  <button class="btn" onclick="manualSend('D')">D Backward</button>
+  <button class="btn" onclick="manualSend('L')">L Left</button>
+  <button class="btn" onclick="manualSend('R')">R Right</button>
+  <button class="btn" onclick="manualSend('S')">S Stop</button>
 
-  <br>
   <video id="video" autoplay playsinline></video>
 
 <script>
   const videoElement = document.getElementById("video");
   const cmdText = document.getElementById("cmdText");
+  const statusText = document.getElementById("statusText");
 
-  // ✅ Put your ESP32 IP here
+  // ✅ Change this to your ESP32 IP shown in Serial Monitor
   const ESP32_IP = "192.168.29.221";
 
-  // ✅ This is the trick: IMAGE request instead of fetch()
-  // This avoids HTTPS -> HTTP blocking ✅
-  function sendCmdToESP32(cmd) {
+  // ✅ SEND COMMAND FUNCTION (Image Trick)
+  function sendCommand(cmd) {
+    statusText.innerText = "Status: Sending " + cmd + " ...";
+
+    // Image request works better than fetch in HTTPS -> HTTP
     const img = new Image();
     img.src = `http://${ESP32_IP}/cmd?cmd=${cmd}&t=${Date.now()}`;
+
+    console.log("✅ Sent:", cmd);
+
+    setTimeout(() => {
+      statusText.innerText = "Status: Sent " + cmd;
+    }, 200);
   }
 
   let lastCmd = "S";
@@ -49,15 +61,19 @@
 
   function sendCmd(cmd) {
     if (cmd !== lastCmd && Date.now() - lastSendTime > 200) {
-      sendCmdToESP32(cmd);
+      sendCommand(cmd);
       lastCmd = cmd;
       lastSendTime = Date.now();
       cmdText.innerText = "Command: " + cmd;
-      console.log("Sent:", cmd);
     }
   }
 
-  // ✅ MediaPipe Hands Setup
+  function manualSend(cmd) {
+    cmdText.innerText = "Command: " + cmd;
+    sendCommand(cmd);
+  }
+
+  // ✅ MediaPipe Hands
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
@@ -109,17 +125,17 @@
 
     let command = "S";
 
-    // ✅ 1 Finger = Forward
+    // ✅ 1 finger = Forward
     if (fingers === 1 && indexUp) {
       command = "U";
     }
 
-    // ✅ 2 Fingers = Backward
+    // ✅ 2 finger = Backward
     else if (fingers === 2 && indexUp && middleUp) {
       command = "D";
     }
 
-    // ✅ Otherwise Left / Right by thumb position
+    // ✅ Left/Right by thumb
     else {
       if (thumbTip.x < wrist.x - 0.08) command = "L";
       else if (thumbTip.x > wrist.x + 0.08) command = "R";
@@ -145,6 +161,7 @@
 
     } catch (err) {
       alert("❌ Camera Error: " + err);
+      console.log(err);
     }
   }
 </script>
