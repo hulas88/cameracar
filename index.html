@@ -4,7 +4,6 @@
   <title>Gesture Control Car - HTTPS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- ✅ MediaPipe Hands -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
   <style>
@@ -13,7 +12,7 @@
     h2 { margin: 10px 0; }
     .cmd { font-size: 26px; font-weight: bold; color: green; margin: 10px 0; }
     .btn { font-size: 18px; padding: 10px 20px; margin: 10px; border-radius: 10px; }
-    .info { font-size: 16px; margin-top: 10px; }
+    .info { font-size: 15px; margin-top: 10px; }
   </style>
 </head>
 
@@ -21,12 +20,11 @@
   <h2>📱✋ Gesture Control Car (HTTPS)</h2>
 
   <div class="cmd" id="cmdText">Command: S</div>
-
   <button class="btn" onclick="startCam()">✅ Start Camera</button>
 
   <div class="info">
     ☝️ 1 Finger = Forward | ✌️ 2 Fingers = Backward <br>
-    👍 Thumb Left = Left | 👍 Thumb Right = Right | ✊ Fist = Stop
+    👍 Thumb Left = Left | 👍 Thumb Right = Right | ✊ Fist/No Hand = Stop
   </div>
 
   <br>
@@ -36,19 +34,26 @@
   const videoElement = document.getElementById("video");
   const cmdText = document.getElementById("cmdText");
 
-  // ✅ Put your ESP32 IP here (from Serial Monitor)
+  // ✅ Put your ESP32 IP here
   const ESP32_IP = "192.168.29.221";
-  const ESP32_URL = `http://${ESP32_IP}/cmd?cmd=`;
+
+  // ✅ This is the trick: IMAGE request instead of fetch()
+  // This avoids HTTPS -> HTTP blocking ✅
+  function sendCmdToESP32(cmd) {
+    const img = new Image();
+    img.src = `http://${ESP32_IP}/cmd?cmd=${cmd}&t=${Date.now()}`;
+  }
 
   let lastCmd = "S";
   let lastSendTime = Date.now();
 
   function sendCmd(cmd) {
     if (cmd !== lastCmd && Date.now() - lastSendTime > 200) {
-      fetch(ESP32_URL + cmd).catch(err => console.log("ESP32 Error:", err));
+      sendCmdToESP32(cmd);
       lastCmd = cmd;
       lastSendTime = Date.now();
       cmdText.innerText = "Command: " + cmd;
+      console.log("Sent:", cmd);
     }
   }
 
@@ -64,13 +69,11 @@
     minTrackingConfidence: 0.7
   });
 
-  // ✅ Finger Up Detection
   function isFingerUp(tip, pip) {
     return tip.y < pip.y;
   }
 
   hands.onResults(results => {
-    // ✅ If no hand detected
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       sendCmd("S");
       return;
@@ -78,9 +81,7 @@
 
     const lm = results.multiHandLandmarks[0];
 
-    // ✅ Landmarks
     const wrist = lm[0];
-
     const thumbTip = lm[4];
 
     const indexTip = lm[8];
@@ -95,32 +96,30 @@
     const pinkyTip = lm[20];
     const pinkyPip = lm[18];
 
-    // ✅ Fingers state (excluding thumb)
     const indexUp  = isFingerUp(indexTip, indexPip);
     const middleUp = isFingerUp(middleTip, middlePip);
     const ringUp   = isFingerUp(ringTip, ringPip);
     const pinkyUp  = isFingerUp(pinkyTip, pinkyPip);
 
-    // ✅ Count number of fingers up
     let fingers = 0;
     if (indexUp) fingers++;
     if (middleUp) fingers++;
     if (ringUp) fingers++;
     if (pinkyUp) fingers++;
 
-    let command = "S"; // default stop
+    let command = "S";
 
-    // ✅ 1 Finger = Forward (Index only)
-    if (fingers == 1 && indexUp) {
+    // ✅ 1 Finger = Forward
+    if (fingers === 1 && indexUp) {
       command = "U";
     }
 
-    // ✅ 2 Fingers = Backward (Index + Middle)
-    else if (fingers == 2 && indexUp && middleUp) {
+    // ✅ 2 Fingers = Backward
+    else if (fingers === 2 && indexUp && middleUp) {
       command = "D";
     }
 
-    // ✅ Left/Right only if Forward/Backward not active
+    // ✅ Otherwise Left / Right by thumb position
     else {
       if (thumbTip.x < wrist.x - 0.08) command = "L";
       else if (thumbTip.x > wrist.x + 0.08) command = "R";
